@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  test:
+  pinned-protocol:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,9 +22,59 @@ jobs:
 
       - name: Fetch oord-protocol (pinned)
         run: |
-          git clone --depth 1 --branch v1.0.0 https://github.com/oordlab/oord-protocol.git /tmp/oord-protocol
+          git clone --depth 1 --branch v1.0.2 https://github.com/oordlab/oord-protocol.git /tmp/oord-protocol
 
-      - name: Run tests
+      - name: Show pinned protocol revision
+        run: |
+          cd /tmp/oord-protocol
+          git rev-parse HEAD
+          git describe --tags --always
+
+      - name: Run tests (pinned)
+        env:
+          OORD_PROTOCOL_DIR: /tmp/oord-protocol
+        run: pytest -q
+
+
+  latest-protocol:
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Fetch oord-protocol (latest tag)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone https://github.com/oordlab/oord-protocol.git /tmp/oord-protocol
+          cd /tmp/oord-protocol
+          git fetch --tags --force
+
+          LATEST_TAG="$(git tag --list 'v*' --sort=-v:refname | head -n 1)"
+          if [ -z "${LATEST_TAG}" ]; then
+            echo "No v* tags found in oord-protocol" >&2
+            exit 2
+          fi
+
+          echo "LATEST_TAG=${LATEST_TAG}"
+          git checkout "${LATEST_TAG}"
+
+      - name: Show latest protocol revision
+        run: |
+          cd /tmp/oord-protocol
+          git rev-parse HEAD
+          git describe --tags --always
+
+      - name: Run tests (latest)
         env:
           OORD_PROTOCOL_DIR: /tmp/oord-protocol
         run: pytest -q
