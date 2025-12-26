@@ -1,0 +1,76 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://oordlab.org/schemas/verify_output_v1.json",
+    "title": "Oord Verify Output v1",
+    "type": "object",
+    "required": ["exit_code", "reason_ids", "error", "error_kind", "bundle_path", "checks"],
+    "properties": {
+      "exit_code": { "type": "integer", "enum": [0, 1, 2] },
+  
+      "reason_ids": {
+        "type": "array",
+        "items": { "type": "string", "minLength": 1 },
+        "uniqueItems": true
+      },
+  
+      "error": { "type": ["string", "null"] },
+      "error_kind": { "type": ["string", "null"], "enum": ["env", null] },
+  
+      "bundle_path": { "type": "string", "minLength": 1 },
+  
+      "batch": {
+        "type": "object",
+        "properties": {
+          "org_id": { "type": ["string", "null"] },
+          "batch_id": { "type": ["string", "null"] },
+          "created_at_ms": { "type": ["integer", "null"] },
+          "file_count": { "type": ["integer", "null"] },
+          "total_bytes": { "type": ["integer", "null"] },
+          "merkle_root": { "type": ["string", "null"] }
+        },
+        "additionalProperties": true
+      },
+  
+      "checks": {
+        "type": "object",
+        "required": [
+          "hashes_ok",
+          "merkle_ok",
+          "jwks_present",
+          "jwks_ok",
+          "manifest_sig_ok",
+          "tl_present",
+          "tl_required",
+          "tl_ok",
+          "tl_sig_verified",
+          "tl_online_enabled",
+          "tl_online_ok"
+        ],
+        "properties": {
+          "hashes_ok": { "type": ["boolean", "null"] },
+          "merkle_ok": { "type": ["boolean", "null"] },
+          "jwks_present": { "type": ["boolean", "null"] },
+          "jwks_ok": { "type": ["boolean", "null"] },
+          "manifest_sig_ok": { "type": ["boolean", "null"] },
+          "tl_present": { "type": ["boolean", "null"] },
+          "tl_required": { "type": ["boolean", "null"] },
+          "tl_ok": { "type": ["boolean", "null"] },
+          "tl_sig_verified": { "type": ["boolean", "null"] },
+          "tl_online_enabled": { "type": ["boolean", "null"] },
+          "tl_online_ok": { "type": ["boolean", "null"] }
+        },
+        "additionalProperties": true
+      },
+  
+      "hashes_ok": { "type": ["boolean", "null"] },
+      "hash_mismatches": { "type": "array" },
+  
+      "merkle": { "type": "object", "additionalProperties": true },
+      "jwks": { "type": "object", "additionalProperties": true },
+      "manifest_sig": { "type": "object", "additionalProperties": true },
+      "tl": { "type": "object", "additionalProperties": true },
+      "tl_online": { "type": "object", "additionalProperties": true }
+    },
+    "additionalProperties": true
+  }
+  

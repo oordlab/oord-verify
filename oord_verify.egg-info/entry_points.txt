@@ -1,0 +1,2 @@
+[console_scripts]
+oord = oord_verify.cli:main
