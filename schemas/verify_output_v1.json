@@ -60,7 +60,7 @@
           "tl_online_enabled": { "type": ["boolean", "null"] },
           "tl_online_ok": { "type": ["boolean", "null"] }
         },
-        "additionalProperties": true
+        "additionalProperties": false
       },
   
       "hashes_ok": { "type": ["boolean", "null"] },
