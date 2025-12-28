@@ -1,18 +1,13 @@
 import json
 from typing import Any, Dict, Optional, Tuple
-from urllib import error as urlerror
-from urllib import request
 
-
-def _http_json(url: str, timeout_s: float = 5.0) -> Dict[str, Any]:
-    req = request.Request(url, headers={"Content-Type": "application/json"}, method="GET")
-    with request.urlopen(req, timeout=timeout_s) as resp:
-        raw = resp.read().decode("utf-8")
-    obj = json.loads(raw)
-    if not isinstance(obj, dict):
-        raise RuntimeError(f"{url} did not return a JSON object")
-    return obj
-
+from oord_verify.notary_client.client import NotaryClient
+from oord_verify.notary_client.errors import (
+    NotaryBadResponse,
+    NotaryNotFound,
+    NotaryUnauthorized,
+    NotaryUnreachable,
+)
 
 def normalize_tl_fields(tl_obj: Dict[str, Any]) -> Tuple[Optional[str], Optional[int], Optional[str], Optional[str]]:
     entry = tl_obj.get("entry") or {}
@@ -41,22 +36,23 @@ def normalize_tl_fields(tl_obj: Dict[str, Any]) -> Tuple[Optional[str], Optional
 
     return merkle_root, seq_int, sth_sig, signer_kid
 
-
-def online_tl_check(tl_url_base: str, seq: int, merkle_root: str, sth_sig: Optional[str]) -> Tuple[bool, Optional[str]]:
-    base = tl_url_base.rstrip("/")
-    url = f"{base}/v1/tl/entries/{seq}"
+def online_tl_check(client: NotaryClient, seq: int, merkle_root: str, sth_sig: Optional[str]) -> Tuple[bool, Optional[str], Optional[str]]:
     try:
-        obj = _http_json(url, timeout_s=5.0)
-    except (urlerror.URLError, TimeoutError, RuntimeError, json.JSONDecodeError, ValueError) as e:
-        return False, f"TL online lookup failed: {e}"
+        obj = client.get_tl_entry_by_seq(int(seq))
+    except NotaryUnauthorized as e:
+        return False, "TL_ONLINE_UNAUTHORIZED", f"TL online unauthorized: {e}"
+    except NotaryNotFound as e:
+        return False, "TL_ONLINE_NOT_FOUND", f"TL online not found: {e}"
+    except NotaryUnreachable as e:
+        return False, "TL_ONLINE_UNREACHABLE", f"TL online unreachable: {e}"
+    except NotaryBadResponse as e:
+        return False, "TL_ONLINE_BAD_RESPONSE", f"TL online bad response: {e}"
 
     entry = obj.get("entry") or obj
     live_root, live_seq, live_sth, _ = normalize_tl_fields(entry)
 
     if live_seq is None or live_root is None:
-        return False, "TL entry missing seq/merkle_root"
+        return False, "TL_ONLINE_BAD_RESPONSE", "TL entry missing seq/merkle_root"
     if live_seq != seq or live_root != merkle_root:
-        return False, f"TL mismatch (live seq={live_seq}, root={live_root})"
-    if sth_sig and live_sth and live_sth != sth_sig:
-        return False, "TL STH signature mismatch"
-    return True, None
+        return False, "TL_ONLINE_CONTRADICTION", f"TL mismatch (live seq={live_seq}, root={live_root})"
+    return True, None, None

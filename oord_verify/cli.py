@@ -9,11 +9,33 @@ from oord_verify.verify.verifier import verify_bundle
 from oord_verify.verify.human import print_human
 from oord_verify.verify.output import wrap_json
 
+_ENV_REASON_IDS = {
+    "TL_ONLINE_UNREACHABLE",
+    "TL_ONLINE_UNAUTHORIZED",
+    "TL_ONLINE_BAD_RESPONSE",
+    "ENV_NOTARY_URL_MISSING",
+}
+
+def _is_env_failure(summary: Dict[str, Any]) -> bool:
+    if summary.get("error_kind") == "env":
+        return True
+    rids = summary.get("reason_ids")
+    if not isinstance(rids, list):
+        return False
+    for r in rids:
+        if not isinstance(r, str):
+            continue
+        if r.startswith("ENV_"):
+            return True
+        if r in _ENV_REASON_IDS:
+            return True
+    return False
+
 def _exit_code_for_results(results: List[Tuple[bool, Dict[str, Any]]]) -> int:
     any_fail = any(not ok_i for ok_i, _ in results)
     if not any_fail:
         return 0
-    any_env = any((s.get("error_kind") == "env") for ok_i, s in results if not ok_i)
+    any_env = any(_is_env_failure(s) for ok_i, s in results if not ok_i)
     return 2 if any_env else 1
 
 def _cmd_verify(args: argparse.Namespace) -> int:
@@ -21,25 +43,14 @@ def _cmd_verify(args: argparse.Namespace) -> int:
     results: List[Tuple[bool, Dict[str, Any]]] = []
 
     for path in bundle_paths:
-        ok, summary = verify_bundle(path, tl_url=args.tl_url)
-
-        if (
-            args.strict
-            and summary.get("tl_online", {}).get("enabled")
-            and summary.get("tl_online", {}).get("ok") is False
-        ):
-            err = summary.get("tl_online", {}).get("error") or ""
-            if err.startswith("TL online lookup failed:"):
-                summary["error_kind"] = "env"
-                if not summary.get("error"):
-                    summary["error"] = err
-                rids = summary.get("reason_ids")
-                if not isinstance(rids, list):
-                    rids = []
-                if "TL_ONLINE_UNREACHABLE" not in rids:
-                    rids.append("TL_ONLINE_UNREACHABLE")
-                summary["reason_ids"] = rids
-                ok = False
+        online_enabled = bool(args.online or args.tl_url)
+        ok, summary = verify_bundle(
+            path,
+            tl_url=args.tl_url,
+            online=online_enabled,
+            tl_api_key=args.tl_api_key,
+            tl_timeout_s=float(args.tl_timeout_s),
+        )
 
         results.append((ok, summary))
 
@@ -74,6 +85,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional Core base URL for online TL verification (e.g. http://127.0.0.1:8000)",
     )
     p_verify.add_argument(
+        "--notary-url",
+        dest="tl_url",
+        help="Alias for --tl-url (preferred name going forward)",
+    )
+    p_verify.add_argument(
+        "--tl-api-key",
+        default=None,
+        help="Optional bearer token for TL reads when not public",
+    )
+    p_verify.add_argument(
+        "--tl-timeout-s",
+        default=5.0,
+        help="HTTP timeout (seconds) for online TL checks",
+    )
+
+    p_verify.add_argument(
         "--json",
         action="store_true",
         help="Emit JSON summary instead of human-readable text",
@@ -81,7 +108,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_verify.add_argument(
         "--strict",
         action="store_true",
-        help="Treat TL unreachable as an error (exit code 2) instead of a soft warning",
+        help="Accepted for back-compat (online env failures already produce exit code 2)",
     )
     p_verify.add_argument(
         "--verbose",

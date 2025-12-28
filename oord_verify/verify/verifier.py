@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from oord_verify.verify.crypto import jwks_fingerprint, verify_manifest_signature, verify_tl_signature
 from oord_verify.verify.merkle import compute_merkle_root_from_manifest_files
 from oord_verify.verify.tl import normalize_tl_fields, online_tl_check
+from oord_verify.notary_client.client import NotaryClient
 from oord_verify.verify.zipio import load_jwks, load_manifest, load_tl_proof
 
 
@@ -99,7 +100,13 @@ def _check_hashes_from_manifest(z: zipfile.ZipFile, manifest: Dict[str, Any]) ->
     return len(mismatches) == 0, mismatches
 
 
-def verify_bundle(path: Path, tl_url: Optional[str] = None) -> Tuple[bool, Dict[str, Any]]:
+def verify_bundle(
+    path: Path,
+    tl_url: Optional[str] = None,
+    online: bool = False,
+    tl_api_key: Optional[str] = None,
+    tl_timeout_s: float = 5.0,
+) -> Tuple[bool, Dict[str, Any]]:
     summary: Dict[str, Any] = {
         "reason_ids": [],
         "bundle_path": str(path),
@@ -127,7 +134,7 @@ def verify_bundle(path: Path, tl_url: Optional[str] = None) -> Tuple[bool, Dict[
         },
         "jwks": {"present": None, "ok": None, "kids": [], "fingerprint": None, "error": None},
         "manifest_sig": {"ok": None, "key_id": None, "sig_verified": None, "error": None},
-        "tl_online": {"enabled": bool(tl_url), "ok": None, "error": None},
+        "tl_online": {"enabled": bool(online), "ok": None, "error": None, "reason_id": None},
         "merkle": {"ok": None, "manifest_root": None, "recomputed_root": None, "error": None},
     }
 
@@ -343,20 +350,35 @@ def verify_bundle(path: Path, tl_url: Optional[str] = None) -> Tuple[bool, Dict[
                         summary["reason_ids"] = ["TL_PROOF_SIG_INVALID"]
                     return False, summary
 
-            if tl_url and tl_obj is not None and seq is not None and merkle_root is not None:
-                ok_online, err = online_tl_check(tl_url, int(seq), merkle_root, sth_sig)
-                summary["tl_online"]["enabled"] = True
-                summary["tl_online"]["ok"] = ok_online
-                summary["tl_online"]["error"] = err
-                if not ok_online:
-                    is_unreachable = bool(err and err.startswith("TL online lookup failed:"))
-                    if not is_unreachable:
-                        summary["error"] = err or "online TL mismatch"
-                        summary["reason_ids"] = ["TL_ONLINE_CONTRADICTION"]
+            online_enabled = bool(online or tl_url)
+            summary["tl_online"]["enabled"] = online_enabled
+
+            if online_enabled:
+                if not tl_url:
+                    summary["tl_online"]["ok"] = False
+                    summary["tl_online"]["reason_id"] = "ENV_NOTARY_URL_MISSING"
+                    summary["tl_online"]["error"] = "online enabled but no --tl-url/--notary-url provided"
+                    summary["error"] = summary["tl_online"]["error"]
+                    summary["reason_ids"] = ["ENV_NOTARY_URL_MISSING"]
+                    return False, summary
+
+                if tl_obj is None or seq is None or merkle_root is None:
+                    summary["tl_online"]["ok"] = None
+                    summary["tl_online"]["reason_id"] = None
+                    summary["tl_online"]["error"] = None
+                else:
+                    client = NotaryClient(base_url=tl_url, api_key=tl_api_key, timeout_s=float(tl_timeout_s))
+                    ok_online, rid, err = online_tl_check(client, int(seq), merkle_root, sth_sig)
+                    summary["tl_online"]["ok"] = ok_online
+                    summary["tl_online"]["reason_id"] = rid
+                    summary["tl_online"]["error"] = err
+                    if not ok_online and rid:
+                        summary["error"] = err or "online TL check failed"
+                        summary["reason_ids"] = [rid]
                         return False, summary
             else:
-                summary["tl_online"]["enabled"] = bool(tl_url)
                 summary["tl_online"]["ok"] = None
+                summary["tl_online"]["reason_id"] = None
                 summary["tl_online"]["error"] = None
 
     except zipfile.BadZipFile as e:
