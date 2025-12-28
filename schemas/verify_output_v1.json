@@ -14,7 +14,7 @@
       },
   
       "error": { "type": ["string", "null"] },
-      "error_kind": { "type": ["string", "null"], "enum": ["env", null] },
+      "error_kind": { "type": ["string", "null"] },
   
       "bundle_path": { "type": "string", "minLength": 1 },
   
@@ -26,7 +26,8 @@
           "created_at_ms": { "type": ["integer", "null"] },
           "file_count": { "type": ["integer", "null"] },
           "total_bytes": { "type": ["integer", "null"] },
-          "merkle_root": { "type": ["string", "null"] }
+          "merkle_root": { "type": ["string", "null"] },
+          "key_id": { "type": ["string", "null"] }
         },
         "additionalProperties": true
       },
@@ -63,7 +64,20 @@
       },
   
       "hashes_ok": { "type": ["boolean", "null"] },
-      "hash_mismatches": { "type": "array" },
+      "hash_mismatches": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["file", "reason"],
+          "properties": {
+            "file": { "type": "string", "minLength": 1 },
+            "reason": { "type": "string", "minLength": 1 },
+            "actual": { "type": "string" },
+            "expected": { "type": "string" }
+          },
+          "additionalProperties": true
+        }
+      },  
   
       "merkle": { "type": "object", "additionalProperties": true },
       "jwks": { "type": "object", "additionalProperties": true },
